@@ -1,0 +1,11 @@
+{
+  "language": "ts",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src",
+  "compilerOptions": {
+    "assets": [
+      { "include": "../email_templates/**/*", "outDir": "./dist" }
+    ],
+    "watchAssets": true
+  }
+}
