@@ -58,7 +58,9 @@ export class UserController {
   @Post()
   @ApiRoute.UPDATE({ name: 'User', description: 'Create User', roles: [Role.SYS_ADMIN] })
   @ApiCreatedResponse({ type: CreateUserResponseDto })
-  async create(@Body() { email, phoneNumber, ...dto }: CreateUserRequestDto) {
+  async create(
+    @Body() { email, phoneNumber, ...dto }: CreateUserRequestDto,
+  ): Promise<{ data: Record<string, any>; message: string; errors: null }> {
     const { data: userAccountData } = await this.adminUserService.createUser({ email, phone_number: phoneNumber });
     await this.adminUserService.assignRoleToUser({ userId: userAccountData.userId, role: dto.defaultRole });
     const user = await this.userService.updateUser({
