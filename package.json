@@ -2,6 +2,10 @@
   "name": "smd-monolith",
   "version": "1.0.0",
   "description": "Flavor Haus Monolith - All features in one NestJS application",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": "20.x"
+  },
   "author": "",
   "license": "MIT",
   "scripts": {
