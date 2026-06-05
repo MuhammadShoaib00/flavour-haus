@@ -20,6 +20,14 @@ export class KitchenService {
     private httpService: HttpService,
   ) {}
 
+  private getStorageFileCount(files: any): number {
+    if (Array.isArray(files)) {
+      return files.length;
+    }
+
+    return files?.KeyCount || 0;
+  }
+
   async getKitchenDetails(dto: GetKitchenDetailsDto) {
     try {
       const { userId } = dto;
@@ -83,47 +91,41 @@ export class KitchenService {
         throw new BadRequestException('Kitchen already exists.');
       } else {
         const { coverPhotos, ...kitchen } = dto;
-        const kitchens = await this.s3.getFiles(
-          `users/${kitchen.userId}/kitchen/cover-photos`,
-        );
-        if (kitchens?.KeyCount === 0) {
-          const uploadedCoverPhotos = !coverPhotos?.length
-            ? []
-            : await Promise.all(
-                coverPhotos?.map((coverPhoto) => {
-                  return this.s3.uploadFile(
-                    coverPhoto,
-                    `users/${kitchen.userId}/kitchen/cover-photos/{uuid}`,
-                  );
-                }),
-              );
+        const uploadedCoverPhotos = !coverPhotos?.length
+          ? []
+          : await Promise.all(
+              coverPhotos.map((coverPhoto) => {
+                return this.s3.uploadFile(
+                  coverPhoto,
+                  `users/${kitchen.userId}/kitchen/cover-photos/{uuid}`,
+                );
+              }),
+            );
 
-          const { _id: kitchenId, ...data } =
-            await this.kitchenRepository.create({
-              ...kitchen,
-              coverPhotos: uploadedCoverPhotos,
-              selectedCoverPhoto: uploadedCoverPhotos[0]?.url || '',
-              servingDays:
-                Object.values(kitchen?.servingDays).length === 7
-                  ? Object.values(kitchen?.servingDays)
-                      .map((bool) => (bool === true ? 1 : 0))
-                      .join('')
-                  : '0000000',
-              boostedDates: {
-                startDate: null,
-                endDate: null,
-              },
-            });
-          return {
-            data: {
-              ...Object.assign({ kitchenId }, Object(data)),
+        const { _id: kitchenId, ...data } =
+          await this.kitchenRepository.create({
+            ...kitchen,
+            coverPhotos: uploadedCoverPhotos,
+            selectedCoverPhoto: uploadedCoverPhotos[0]?.url || '',
+            servingDays:
+              kitchen?.servingDays &&
+              Object.values(kitchen.servingDays).length === 7
+                ? Object.values(kitchen.servingDays)
+                    .map((bool) => (bool === true ? 1 : 0))
+                    .join('')
+                : '0000000',
+            boostedDates: {
+              startDate: null,
+              endDate: null,
             },
-            message: 'Kitchen created successfully.',
-            errors: null,
-          };
-        } else {
-          throw new Error('Kitchen already exists.');
-        }
+          });
+        return {
+          data: {
+            ...Object.assign({ kitchenId }, Object(data)),
+          },
+          message: 'Kitchen created successfully.',
+          errors: null,
+        };
       }
     } catch (err) {
       throw err;
@@ -149,10 +151,11 @@ export class KitchenService {
         );
       }
 
+      const storedCoverPhotosCount = this.getStorageFileCount(kitchens);
+      const newCoverPhotosCount = coverPhotos?.length || 0;
       if (
-        kitchens?.KeyCount != 0 &&
-        kitchens?.KeyCount <= 4 &&
-        kitchens?.KeyCount + coverPhotos?.length > 4
+        kitchens &&
+        storedCoverPhotosCount + newCoverPhotosCount > 4
       ) {
         throw new BadRequestException("Kitchen's cover photos limit exceeded.");
       }
@@ -167,16 +170,15 @@ export class KitchenService {
             ...kitchen,
             ...(!kitchens
               ? {}
-              : kitchens?.KeyCount === 0 && coverPhotos?.length <= 4
+              : storedCoverPhotosCount === 0 && newCoverPhotosCount <= 4
               ? {
                   $set: {
                     coverPhotos: uploadedCoverPhotos,
                     selectedCoverPhoto: uploadedCoverPhotos[0].url,
                   },
                 }
-              : kitchens?.KeyCount != 0 &&
-                kitchens?.KeyCount <= 4 &&
-                kitchens?.KeyCount + coverPhotos?.length <= 4 && {
+              : storedCoverPhotosCount > 0 &&
+                storedCoverPhotosCount + newCoverPhotosCount <= 4 && {
                   $push: { coverPhotos: { $each: uploadedCoverPhotos } },
                 }),
             ...(kitchen.servingDays && {

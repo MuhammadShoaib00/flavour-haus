@@ -17,6 +17,7 @@ import {
   ApiAcceptedResponse,
   ApiCreatedResponse,
   ApiNoContentResponse,
+  ApiParam,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -36,6 +37,7 @@ import {
 } from '../dto/user/ingrdients.dto';
 import { ApiRoute } from '../shared/decorators/custom/api-route.decorator';
 import { IngredientService } from '../modules/listings/services/ingredient.service';
+import { CheckHostNotConfirmed } from '../shared/decorators/checkHostNotConfirmed';
 
 @ApiTags('Ingredients')
 @Controller('ingredients')
@@ -44,6 +46,7 @@ export class IngredientsController {
   constructor(private ingredientService: IngredientService) {}
 
   @Get()
+  @CheckHostNotConfirmed()
   @ApiRoute.LIST({
     name: 'Get Ingredients',
     description: 'Get All Ingredients',
@@ -69,6 +72,7 @@ export class IngredientsController {
   }
 
   @Get('all')
+  @CheckHostNotConfirmed()
   @ApiRoute.LIST({
     name: 'Get Ingredients and Recipes',
     description: 'Get All Ingredients For Recipes',
@@ -80,13 +84,14 @@ export class IngredientsController {
     return { data: ingrdients, errors: null, message: 'All Ingrdients' };
   }
 
-  @Get('id')
+  @Get(':ingredientId')
+  @CheckHostNotConfirmed()
   @ApiRoute.LIST({
     name: 'Get Ingredient',
     description: 'Got Ingredient',
     roles: [Role.HOST],
   })
-  @ApiQuery({ name: 'ingredientId', type: String })
+  @ApiParam({ name: 'ingredientId', type: String })
   @ApiCreatedResponse({ type: GetSingleIngredientResponse })
   async getSignleListing(@Param('ingredientId') ingredientId: string) {
     const ingredient = await this.ingredientService.getIngredient({ ingredientId });
@@ -100,6 +105,7 @@ export class IngredientsController {
     errorMessage: 'Invalid image file entered.',
   })
   @Post()
+  @CheckHostNotConfirmed()
   @ApiRoute.UPDATE({
     name: 'Created Ingredient',
     description: 'Created Ingredients',
@@ -122,6 +128,7 @@ export class IngredientsController {
     errorMessage: 'Invalid image file entered.',
   })
   @Patch(':ingredientId')
+  @CheckHostNotConfirmed()
   @ApiRoute.UPDATE({
     name: 'Ingredient',
     description: 'Update Ingredient',
@@ -144,6 +151,7 @@ export class IngredientsController {
   }
 
   @Delete()
+  @CheckHostNotConfirmed()
   @ApiRoute.DELETE({
     name: 'Delete Ingredient',
     description: 'Delete Ingredients',

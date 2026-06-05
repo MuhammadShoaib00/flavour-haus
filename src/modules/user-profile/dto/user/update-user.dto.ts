@@ -20,7 +20,6 @@ export class UpdateUserDto {
   ];
   profileCompletion?: {
     personalInfo: { required: boolean; percentage: number; completed: boolean };
-    licenses: { required: boolean; percentage: number; completed: boolean };
     trainings: { required: boolean; percentage: number; completed: boolean };
     cuisines: { required: boolean; percentage: number; completed: boolean };
   };

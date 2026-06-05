@@ -101,7 +101,7 @@ export class UserProfileController {
       throw new PhoneNumberAlreadyExists('Phone number already exists');
     }
     return await this.userService.postPersonalInfo({
-      dto: { ...dto, userId: req.user.userId, userIsHost: req.user.defaultRole == Role.HOST },
+      dto: { ...dto, userId: req.user.userId, userIsHost: (req.user.defaultRole || req.user.role) == Role.HOST },
       user: req.user,
     });
   }
@@ -139,7 +139,12 @@ export class UserProfileController {
     @Body() dto: UpdateKitchenDetailsRequestDto,
     @UploadedFiles() { coverPhotos }: { [k: string]: Express.Multer.File[] },
   ) {
-    return await this.kitchenService.updateKitchenDetails({ userId, coverPhotos, ...dto });
+    const data = await this.kitchenService.updateKitchenDetails({ userId, coverPhotos, ...dto });
+    await this.userService.updateProfileCompletion({
+      hostId: userId,
+      key: ProfileCompletionTypes.KITCHEN_DETAILS,
+    });
+    return data;
   }
 
   @CheckHostNotConfirmed()

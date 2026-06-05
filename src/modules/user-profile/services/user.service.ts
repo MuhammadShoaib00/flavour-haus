@@ -26,6 +26,8 @@ import { UserAuditTypeEnum } from '../interfaces/user-audit.enum';
 import { AssignRightsDto } from '../dto/user/assign-rights.dto';
 import { AACApiDto } from '../dto/user/aac-api.dto';
 import { AACLeadGenerationService } from './acc-api.service';
+import { ProfileCompletionTypes } from '../../../shared/interfaces/user';
+import { Role } from '../../../shared/interfaces/role';
 
 @Injectable()
 export class UserService {
@@ -42,6 +44,124 @@ export class UserService {
     private jwtService: JwtService,
     private emailService: EmailService,
   ) { }
+
+  private hasValue(value: any): boolean {
+    return value !== undefined && value !== null && value !== '';
+  }
+
+  private isHost(user: any): boolean {
+    return user?.defaultRole === Role.HOST;
+  }
+
+  private hasCompletedPersonalInfo(user: any): boolean {
+    const requiredFields = [
+      'firstName',
+      'lastName',
+      'phoneNumber',
+      'dob',
+      'gender',
+      'country',
+      'city',
+      'address',
+    ];
+
+    return requiredFields.every((field) => this.hasValue(user?.[field]));
+  }
+
+  private hasCompletedIdVerification(user: any): boolean {
+    return user?.dbsCheck?.status === true;
+  }
+
+  private async hasCompletedKitchenDetails(userId: string): Promise<boolean> {
+    const kitchen = await this.kitchenRepository.findOneWithoutException(
+      { userId },
+      {
+        name: 1,
+        location: 1,
+        servingDays: 1,
+        servingTimeFrom: 1,
+        servingTimeTo: 1,
+      },
+    );
+
+    return (
+      this.hasValue(kitchen?.name) &&
+      this.hasValue(kitchen?.location?.address) &&
+      this.hasValue(kitchen?.servingDays) &&
+      this.hasValue(kitchen?.servingTimeFrom) &&
+      this.hasValue(kitchen?.servingTimeTo)
+    );
+  }
+
+  private markProfileCompletion(profile: any, key: ProfileCompletionTypes) {
+    return {
+      ...(profile || {}),
+      [key]: {
+        ...(profile?.[key] || {}),
+        completed: true,
+      },
+    };
+  }
+
+  private async hydrateProfileCompletionFromSavedData(user: any) {
+    let profileCompletion = { ...(user?.profileCompletion || {}) };
+
+    if (this.hasCompletedPersonalInfo(user)) {
+      profileCompletion = this.markProfileCompletion(
+        profileCompletion,
+        ProfileCompletionTypes.PERSIONAL_INFO,
+      );
+    }
+
+    if (this.hasCompletedIdVerification(user)) {
+      profileCompletion = this.markProfileCompletion(
+        profileCompletion,
+        ProfileCompletionTypes.ID_VERFICATION,
+      );
+    }
+
+    if (await this.hasCompletedKitchenDetails(user._id)) {
+      profileCompletion = this.markProfileCompletion(
+        profileCompletion,
+        ProfileCompletionTypes.KITCHEN_DETAILS,
+      );
+    }
+
+    return await this.profileCompletion(profileCompletion, null);
+  }
+
+  private async syncProfileCompletionFromSavedData(user: any) {
+    if (!this.isHost(user)) {
+      return user;
+    }
+
+    const completion = await this.hydrateProfileCompletionFromSavedData(user);
+    const normalizedUser = {
+      ...user,
+      profileCompletion: completion.profileCompletion,
+      overalProfileCompletion: completion.overall,
+      ...(completion.hostConfirmed && { isEligibleForAudit: true }),
+    };
+
+    const shouldPersist =
+      JSON.stringify(user.profileCompletion || {}) !==
+        JSON.stringify(completion.profileCompletion) ||
+      user.overalProfileCompletion !== completion.overall ||
+      (completion.hostConfirmed && user.isEligibleForAudit !== true);
+
+    if (shouldPersist) {
+      await this.userRepository.findOneAndUpdate(
+        { _id: user._id },
+        {
+          profileCompletion: completion.profileCompletion,
+          overalProfileCompletion: completion.overall,
+          ...(completion.hostConfirmed && { isEligibleForAudit: true }),
+        },
+      );
+    }
+
+    return normalizedUser;
+  }
 
   async listUsers(payload: {
     role: string;
@@ -197,7 +317,8 @@ export class UserService {
         { _id: userId },
         { 'license.premisesPermissionFile': 0, 'dbsCheck.file': 0 },
       );
-      const { _id, ...data } = user;
+      const syncedUser = await this.syncProfileCompletionFromSavedData(user);
+      const { _id, ...data } = syncedUser;
       !!data.email &&
         (data.email = Buffer.from(data?.email, 'base64').toString('ascii'));
 
@@ -232,6 +353,14 @@ export class UserService {
           gender: 0,
         },
       );
+      if (this.isHost(user) && user.isEligibleForAudit !== true) {
+        const fullUser = await this.userRepository.findOne(
+          { _id: userId },
+          { 'license.premisesPermissionFile': 0, 'dbsCheck.file': 0 },
+        );
+        const syncedUser = await this.syncProfileCompletionFromSavedData(fullUser);
+        user.isEligibleForAudit = syncedUser.isEligibleForAudit;
+      }
       const { _id, ...data } = user;
       !!data.email &&
         (data.email = Buffer.from(data?.email, 'base64').toString('ascii'));
@@ -607,13 +736,17 @@ export class UserService {
       if (userIsHost) {
         let lan: any = [];
         let { language } = user;
-        language.forEach((item) => {
+        language?.forEach((item) => {
           lan.push(item.languageName);
         });
         await this.kitchenRepository.findOneAndUpdate(
           { userId: userId },
           { language: lan },
         );
+        await this.updateProfileCompletion({
+          hostId: userId,
+          key: ProfileCompletionTypes.PERSIONAL_INFO,
+        });
       }
       return {
         error: null,
@@ -634,22 +767,17 @@ export class UserService {
     const profileCompletion = {
       personalInfo: {
         required: true,
-        percentage: 15,
+        percentage: 20,
         completed: profile?.personalInfo?.completed || false,
-      },
-      licenses: {
-        required: true,
-        percentage: 15,
-        completed: profile?.licenses?.completed || false,
       },
       idVerification: {
         required: true,
-        percentage: 15,
+        percentage: 20,
         completed: profile?.idVerification?.completed || false,
       },
       kitchenDetails: {
         required: true,
-        percentage: 10,
+        percentage: 15,
         completed: profile?.kitchenDetails?.completed || false,
       },
       trainings: {
@@ -698,7 +826,7 @@ export class UserService {
       hostConfirmed:
         profileCompletion.personalInfo.completed === true &&
           profileCompletion.idVerification.completed === true &&
-          profileCompletion.licenses.completed === true &&
+          profileCompletion.kitchenDetails.completed === true &&
           overall >= 60
           ? true
           : false,
@@ -841,11 +969,16 @@ export class UserService {
         dbsFile = (await this.s3.uploadFile(dbsFile, url, null, 'private'))
           ?.url;
       }
-      return await this.userRepository.findOneAndUpdate(
+      const updatedUser = await this.userRepository.findOneAndUpdate(
         { _id: hostId },
         { dbsCheck: { file: dbsFile, status: dbsStatus } },
         { projection: { dbsCheck: 1 } },
       );
+      await this.updateProfileCompletion({
+        hostId,
+        key: ProfileCompletionTypes.ID_VERFICATION,
+      });
+      return updatedUser;
     } catch (err) {
       throw err;
     }

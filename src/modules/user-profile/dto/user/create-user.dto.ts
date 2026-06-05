@@ -15,7 +15,6 @@ export class CreateUserDto implements IUser {
   aboutMe?: string;
   profileCompletion?: {
     personalInfo: { required: boolean; percentage: number; completed: boolean };
-    licenses: { required: boolean; percentage: number; completed: boolean };
     idVerification: { required: boolean; percentage: number; completed: boolean };
     kitchenDetails: { required: boolean; percentage: number; completed: boolean };
     trainings: { required: boolean; percentage: number; completed: boolean };

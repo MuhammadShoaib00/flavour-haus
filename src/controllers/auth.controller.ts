@@ -110,7 +110,7 @@ export class AuthController {
       }
       if ((user as any).defaultRole == Role.HOST) {
         try {
-          this.createKitchen(userProfile.userId, userProfile.firstName, userProfile.lastName);
+          await this.createKitchen(userProfile.userId, userProfile.firstName, userProfile.lastName);
         } catch (err) {
           this.logger.debug(err.message);
         }
